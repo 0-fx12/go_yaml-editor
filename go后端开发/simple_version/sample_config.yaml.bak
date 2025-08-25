@@ -3,7 +3,7 @@
 
 metadata:
     name: "Sample VNF Configuration"
-    version: "1.0.1"
+    version: "1.0.0 "
     description: "这是一个示例VNF配置文件"
     author: "VNF Team"
 groups:
