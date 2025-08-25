@@ -2,8 +2,8 @@
 # 展示不同的配置项格式和表单项属性
 
 metadata:
-    name: "Sample VNF Configuration"
-    version: "1.0.0 "
+    name: "66666"
+    version: "27-71"
     description: "这是一个示例VNF配置文件"
     author: "VNF Team"
 groups:

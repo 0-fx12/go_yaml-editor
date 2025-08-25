@@ -15,7 +15,10 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
+
+	"simple-version/mongo"
 )
 
 // YAMLData 存储解析后的YAML数据
@@ -229,6 +232,8 @@ func toString(v interface{}) string { if v == nil { return "" }; s, ok := v.(str
 func stringify(v interface{}) string { b, _ := yaml.Marshal(v); return strings.TrimSpace(string(b)) }
 
 func main() {
+	// 加载 .env 文件（如果存在）
+	_ = godotenv.Load()
 	// 设置Gin模式
 	gin.SetMode(gin.ReleaseMode)
 
@@ -245,11 +250,13 @@ func main() {
 			// 尝试读取当前目录下的yaml文件
 			yamlFiles := []string{"config.yaml", "sample_config.yaml", "test.yaml"}
 			var yamlData *YAMLData
+			var chosen string
 
 			for _, filename := range yamlFiles {
 				if _, err := os.Stat(filename); err == nil {
 					if data, err := parseYAMLFile(filename); err == nil {
 						yamlData = data
+						chosen = filename
 						break
 					}
 				}
@@ -259,6 +266,19 @@ func main() {
 				c.JSON(http.StatusNotFound, gin.H{"error": "未找到可用的YAML文件"})
 				return
 			}
+
+			// 首次/常规读取快照保存到Mongo（不阻塞主流程）
+			go func(copyData *YAMLData, fname string) {
+				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+				defer cancel()
+				// 将字段转换为简易文档
+				var docs []map[string]interface{}
+				for _, f := range copyData.Fields {
+					docs = append(docs, map[string]interface{}{"path": f.Path, "value": f.Value, "type": f.Type})
+				}
+				_ = mongo.SaveYAMLRead(ctx, filepath.Base(fname), copyData.Content, docs)
+				_ = mongo.UpsertLatest(ctx, filepath.Base(fname), copyData.Content, docs)
+			}(yamlData, chosen)
 
 			// 分页参数
 			page := 1
@@ -278,17 +298,11 @@ func main() {
 			total := len(yamlData.Fields)
 			start := (page - 1) * pageSize
 			end := start + pageSize
-			if start >= total {
-				start = total
-			}
-			if end > total {
-				end = total
-			}
+			if start >= total { start = total }
+			if end > total { end = total }
 
 			var pageFields []Field
-			if start < total {
-				pageFields = yamlData.Fields[start:end]
-			}
+			if start < total { pageFields = yamlData.Fields[start:end] }
 
 			c.JSON(http.StatusOK, gin.H{
 				"data": gin.H{
@@ -329,9 +343,7 @@ func main() {
 			}
 
 			// 应用更新到节点
-			for p, v := range req.Updates {
-				_ = setNodeValueByPath(&root, p, v)
-			}
+			for p, v := range req.Updates { _ = setNodeValueByPath(&root, p, v) }
 
 			// 备份原文件
 			_ = os.WriteFile(filePath+".bak", b, 0644)
@@ -347,6 +359,18 @@ func main() {
 				return
 			}
 
+			// 重解析用于保存更新快照
+			if data, err := parseYAMLFile(filePath); err == nil {
+				go func(copyData *YAMLData) {
+					ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+					defer cancel()
+					var docs []map[string]interface{}
+					for _, f := range copyData.Fields { docs = append(docs, map[string]interface{}{"path": f.Path, "value": f.Value, "type": f.Type}) }
+					_ = mongo.SaveYAMLUpdate(ctx, filepath.Base(filePath), req.Updates, copyData.Content, docs)
+					_ = mongo.UpsertLatest(ctx, filepath.Base(filePath), copyData.Content, docs)
+				}(data)
+			}
+
 			c.JSON(http.StatusOK, gin.H{"message": "saved", "file": filepath.Base(filePath)})
 		})
 
@@ -354,11 +378,13 @@ func main() {
 		api.GET("/yaml/raw", func(c *gin.Context) {
 			yamlFiles := []string{"config.yaml", "sample_config.yaml", "test.yaml"}
 			var yamlData *YAMLData
+			var chosen string
 
 			for _, filename := range yamlFiles {
 				if _, err := os.Stat(filename); err == nil {
 					if data, err := parseYAMLFile(filename); err == nil {
 						yamlData = data
+						chosen = filename
 						break
 					}
 				}
@@ -369,6 +395,15 @@ func main() {
 				return
 			}
 
+			// 读取原始也保存一次最新快照（异步）
+			go func(copyData *YAMLData, fname string) {
+				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+				defer cancel()
+				var docs []map[string]interface{}
+				for _, f := range copyData.Fields { docs = append(docs, map[string]interface{}{"path": f.Path, "value": f.Value, "type": f.Type}) }
+				_ = mongo.UpsertLatest(ctx, filepath.Base(fname), copyData.Content, docs)
+			}(yamlData, chosen)
+
 			c.JSON(http.StatusOK, gin.H{
 				"data":    yamlData.Content,
 				"message": "success",
@@ -378,20 +413,14 @@ func main() {
 
 	// 静态资源（放在最后，避免与 /api 路由冲突）
 	r.Static("/static", "./web")
-	r.GET("/", func(c *gin.Context) {
-		c.File("./web/index.html")
-	})
+	r.GET("/", func(c *gin.Context) { c.File("./web/index.html") })
 
 	// 404处理
-	r.NoRoute(func(c *gin.Context) {
-		c.JSON(http.StatusNotFound, gin.H{"message": "路由未找到"})
-	})
+	r.NoRoute(func(c *gin.Context) { c.JSON(http.StatusNotFound, gin.H{"message": "路由未找到"}) })
 
 	// 获取端口配置
 	port := os.Getenv("APP_PORT")
-	if port == "" {
-		port = "8080"
-	}
+	if port == "" { port = "8080" }
 
 	// 创建HTTP服务器
 	srv := &http.Server{ Addr: ":" + port, Handler: r }
@@ -414,9 +443,6 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatal("服务器强制关闭:", err)
-	}
-
+	if err := srv.Shutdown(ctx); err != nil { log.Fatal("服务器强制关闭:", err) }
 	log.Println("服务器已关闭")
 }
