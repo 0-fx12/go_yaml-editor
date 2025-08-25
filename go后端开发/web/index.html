@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VNF 配置管理</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "PingFang SC", "Microsoft YaHei", sans-serif; margin: 24px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    th, td { border: 1px solid #e5e7eb; padding: 8px; font-size: 14px; }
+    th { background: #f9fafb; text-align: left; }
+    tr.modified { background: #fff7ed; }
+    .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .btn { padding: 6px 12px; background: #2563eb; color: #fff; border: 0; border-radius: 4px; cursor: pointer; }
+    .btn.secondary { background: #374151; }
+    input[type="text"], select { padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 4px; }
+    .pager { margin-top: 8px; display: flex; gap: 8px; align-items: center; }
+  </style>
+  <script>
+    const apiBase = '/api/v1';
+    async function uploadZip() {
+      const file = document.getElementById('zip').files[0];
+      if (!file) { alert('请选择.zip文件'); return; }
+      const fd = new FormData(); fd.append('file', file);
+      const res = await fetch(`${apiBase}/uploads`, { method: 'POST', body: fd });
+      if (!res.ok) { alert('上传失败'); return; }
+      const data = await res.json();
+      document.getElementById('log').textContent = `导入成功：VNF #${data.vnf.id} ${data.vnf.name}，参数 ${data.definitions.length} 个`;
+      loadVnfs();
+    }
+    async function loadVnfs(page=1) {
+      const res = await fetch(`${apiBase}/vnfs?page=${page}&pageSize=10`);
+      const data = await res.json();
+      const tbody = document.querySelector('#vnf-tbody');
+      tbody.innerHTML = '';
+      data.items.forEach(v => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${v.id}</td><td>${v.name}</td><td><button class="btn" onclick="openDefs(${v.id})">查看参数</button></td>`;
+        tbody.appendChild(tr);
+      });
+    }
+    async function openDefs(vnfId, page=1) {
+      window.currentVnfId = vnfId;
+      document.getElementById('defs').style.display = 'block';
+      await loadDefs(page);
+    }
+    async function loadDefs(page=1) {
+      const modifiedOnly = document.getElementById('modifiedOnly').checked;
+      const res = await fetch(`${apiBase}/vnfs/${window.currentVnfId}/definitions?page=${page}&pageSize=10&modifiedOnly=${modifiedOnly}`);
+      const data = await res.json();
+      const tbody = document.querySelector('#def-tbody');
+      tbody.innerHTML = '';
+      data.items.forEach(d => {
+        const tr = document.createElement('tr');
+        tr.className = d.modified ? 'modified' : '';
+        tr.innerHTML = `
+          <td>${d.parameterName}</td>
+          <td>${d.descriptionTxt}</td>
+          <td>${d.type}</td>
+          <td><input type="text" value="${d.currentValue || ''}" data-id="${d.id}" onchange="onValueChange(event, '${d.defaultValue}')"></td>
+          <td>${d.defaultValue}</td>
+          <td>${d.canBeUpdated ? '是' : '否'}</td>
+          <td>
+            <button class="btn" onclick="saveDef(${d.id})">保存</button>
+            <button class="btn secondary" onclick="delDef(${d.id})">删除</button>
+          </td>`;
+        tbody.appendChild(tr);
+      });
+    }
+    function onValueChange(e, defVal) {
+      const tr = e.target.closest('tr');
+      tr.className = (e.target.value !== defVal) ? 'modified' : '';
+    }
+    async function saveDef(id) {
+      const input = document.querySelector(`input[data-id="${id}"]`);
+      const body = { currentValue: input.value };
+      const res = await fetch(`${apiBase}/vnfs/${window.currentVnfId}/definitions/${id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      });
+      if(!res.ok){ alert('保存失败'); return; }
+      await loadDefs();
+    }
+    async function delDef(id) {
+      if(!confirm('确认删除?')) return;
+      const res = await fetch(`${apiBase}/vnfs/${window.currentVnfId}/definitions/${id}`, { method: 'DELETE' });
+      if(!res.ok){ alert('删除失败'); return; }
+      await loadDefs();
+    }
+    window.addEventListener('DOMContentLoaded', () => loadVnfs());
+  </script>
+</head>
+<body>
+  <h2>VNF 配置管理</h2>
+  <div class="row">
+    <input type="file" id="zip" accept=".zip" />
+    <button class="btn" onclick="uploadZip()">上传并导入</button>
+    <span id="log" style="margin-left:12px;color:#065f46"></span>
+  </div>
+
+  <h3>VNF 实例</h3>
+  <table>
+    <thead><tr><th>ID</th><th>名称</th><th>操作</th></tr></thead>
+    <tbody id="vnf-tbody"></tbody>
+  </table>
+
+  <div id="defs" style="display:none; margin-top:24px;">
+    <h3>参数列表</h3>
+    <label><input type="checkbox" id="modifiedOnly" onchange="loadDefs()"/> 只看已修改</label>
+    <table>
+      <thead>
+        <tr>
+          <th>参数名</th><th>描述</th><th>类型</th><th>当前值</th><th>默认值</th><th>可更新</th><th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="def-tbody"></tbody>
+    </table>
+  </div>
+</body>
+</html>
+
+
