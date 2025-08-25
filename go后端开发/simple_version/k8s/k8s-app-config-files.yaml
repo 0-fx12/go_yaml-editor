@@ -1,0 +1,41 @@
+# 应用配置文件ConfigMap
+# 包含YAML配置文件，用于在K8s中挂载到应用容器
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config-files
+  namespace: yaml-config-manager
+  labels:
+    app: yaml-config-manager
+    component: config
+data:
+  sample_config.yaml: |
+    # 示例YAML配置文件
+    # 这个文件会被挂载到应用容器中供读取和修改
+
+    app:
+      name: "YAML Config Manager"
+      version: "1.0.0"
+      description: "A web-based YAML configuration manager"
+
+    server:
+      port: 8080
+      host: "0.0.0.0"
+      cors:
+        enabled: true
+        origins: ["*"]
+
+    database:
+      type: "mongodb"
+      connection_string: "mongodb://admin:password123@mongodb:27017"
+      database_name: "vnf_config"
+
+    features:
+      yaml_editor: true
+      config_history: true
+      api_access: true
+
+    logging:
+      level: "info"
+      format: "json"

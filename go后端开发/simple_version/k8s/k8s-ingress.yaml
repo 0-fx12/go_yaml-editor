@@ -1,0 +1,54 @@
+# Ingress配置用于外部访问
+# 提供对YAML配置管理器的HTTP访问
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: yaml-config-ingress
+  namespace: yaml-config-manager
+  labels:
+    app: yaml-config-manager
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+spec:
+  rules:
+  - host: yaml-config.local  # 可以修改为你的域名
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: yaml-config-app
+            port:
+              number: 8080
+  - host: api.yaml-config.local  # API专用域名
+    http:
+      paths:
+      - path: /api/v1/
+        pathType: Prefix
+        backend:
+          service:
+            name: yaml-config-app
+            port:
+              number: 8080
+
+---
+# 如果你使用的是traefik或其他Ingress控制器，可以使用下面的配置：
+# apiVersion: traefik.containo.us/v1alpha1
+# kind: IngressRoute
+# metadata:
+#   name: yaml-config-ingress
+#   namespace: yaml-config-manager
+# spec:
+#   entryPoints:
+#     - web
+#   routes:
+#   - match: Host(`yaml-config.local`) || Host(`api.yaml-config.local`)
+#     kind: Rule
+#     services:
+#     - name: yaml-config-app
+#       port: 8080

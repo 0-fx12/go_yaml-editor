@@ -1,0 +1,79 @@
+# YAML配置管理器应用Deployment和Service
+# 包含前后端服务的整合部署
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: yaml-config-app
+  namespace: yaml-config-manager
+  labels:
+    app: yaml-config-manager
+    component: backend
+spec:
+  selector:
+    app: yaml-config-manager
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http
+  type: ClusterIP
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: yaml-config-app
+  namespace: yaml-config-manager
+  labels:
+    app: yaml-config-manager
+    component: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: yaml-config-manager
+  template:
+    metadata:
+      labels:
+        app: yaml-config-manager
+    spec:
+      containers:
+      - name: yaml-config-manager
+        image: yaml-config-manager:latest
+        ports:
+        - containerPort: 8080
+          name: http
+        envFrom:
+        - configMapRef:
+            name: yaml-config-app
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app/config
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        readinessProbe:
+          httpGet:
+            path: /api/v1/yaml
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /api/v1/yaml
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        # 前端是无状态的，通过健康检查保证服务可用性
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 15"]
+      volumes:
+      - name: config-volume
+        configMap:
+          name: app-config-files

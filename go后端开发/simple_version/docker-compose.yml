@@ -1,0 +1,61 @@
+# Docker Compose配置
+# 用于本地开发和测试环境的容器编排
+
+version: '3.8'
+
+services:
+  # MongoDB数据库服务
+  mongodb:
+    image: mongo:7.0
+    container_name: yaml-config-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password123
+      MONGO_INITDB_DATABASE: vnf_config
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    networks:
+      - yaml-config-network
+    healthcheck:
+      test: ["CMD", "mongo", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # YAML配置管理器应用
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: yaml-config-app
+    restart: unless-stopped
+    environment:
+      APP_PORT: 8080
+      MONGO_URI: mongodb://admin:password123@mongodb:27017
+      MONGO_DATABASE: vnf_config
+      GIN_MODE: release
+    ports:
+      - "8080:8080"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    volumes:
+      - ./sample_config.yaml:/app/sample_config.yaml:ro
+    networks:
+      - yaml-config-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/v1/yaml"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  mongodb_data:
+
+networks:
+  yaml-config-network:
+    driver: bridge
