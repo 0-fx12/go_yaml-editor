@@ -39,7 +39,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./sample_config.yaml:/app/config.yaml:ro
+      - ./sample_config.yaml:/app/config.yaml
     depends_on:
       mongodb:
         condition: service_healthy
