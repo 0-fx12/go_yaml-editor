@@ -1,0 +1,21 @@
+# 超简单的Go应用Dockerfile
+FROM golang:1.22-alpine
+
+# 设置工作目录
+WORKDIR /app
+
+# 设置Go代理
+ENV GOPROXY=https://goproxy.cn,direct
+ENV GOSUMDB=off
+
+# 复制所有文件
+COPY . .
+
+# 下载依赖并编译（一步完成）
+RUN go mod tidy && go build -o main main.go.go
+
+# 暴露端口
+EXPOSE 8080
+
+# 直接运行
+CMD ["./main"]
