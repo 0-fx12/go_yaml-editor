@@ -37,3 +37,4 @@ print('MongoDB初始化完成：数据库 vnf_config 已创建，集合和索引
 
 
 
+

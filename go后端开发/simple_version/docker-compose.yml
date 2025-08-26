@@ -28,7 +28,7 @@ services:
   app:
     build:
       context: .
-      dockerfile: Dockerfile.simple
+      dockerfile: Dockerfile.local
     container_name: yaml-config-app
     restart: unless-stopped
     environment:
